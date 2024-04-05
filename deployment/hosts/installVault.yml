@@ -1,0 +1,67 @@
+- name: Install Vault and configure
+  hosts: 34.219.204.141
+  become: yes
+  tasks:
+    - name: Update apt and install gpg and wget
+      apt:
+        update_cache: yes
+        name:
+          - gpg
+          - wget
+        state: present
+
+    - name: Download HashiCorp GPG key and save to keyring
+      shell: wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+    - name: Display HashiCorp GPG key fingerprint
+      shell: gpg --no-default-keyring --keyring /usr/share/keyrings/hashicorp-archive-keyring.gpg --fingerprint
+
+    - name: Add HashiCorp repository
+      shell: echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+    - name: Update apt again
+      apt:
+        update_cache: yes
+
+    - name: Install Vault
+      apt:
+        name: vault
+        state: present
+
+    - name: Create vault/data directory
+      file:
+        path: /etc/vault/data
+        state: directory
+        mode: '0755'
+
+    - name: Create config.hcl file
+      blockinfile:
+        path: /etc/vault/config.hcl
+        block: |
+          ui = true
+          disable_mlock = true
+
+          storage "raft" {
+            path    = "./vault/data"
+            node_id = "node1"
+          }
+
+          listener "tcp" {
+            address     = "0.0.0.0:8200"
+            tls_disable = "true"
+          }
+
+          api_addr = "http://127.0.0.1:8200"
+          cluster_addr = "https://127.0.0.1:8201"
+
+        insertafter: EOF
+        create: yes
+
+    - name: Start Vault server
+      command: vault server -config=/etc/vault/config.hcl
+      async: 300
+      poll: 0
+
+    - name: Further tasks go here
+      debug:
+        msg: "Vault server is now running and further tasks can be executed"
